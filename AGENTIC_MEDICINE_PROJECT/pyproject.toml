@@ -1,0 +1,28 @@
+[project]
+name = "agentic-medicine-project"
+version = "1.0.0"
+description = "YOLO-first medicine package MFG/EXP date detection API"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.136.3",
+    "langgraph>=0.4.0",
+    "openai>=2.40.0",
+    "opencv-python>=4.13.0.92",
+    "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.20",
+    "ultralytics>=8.4.60",
+    "uvicorn>=0.48.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.25.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]

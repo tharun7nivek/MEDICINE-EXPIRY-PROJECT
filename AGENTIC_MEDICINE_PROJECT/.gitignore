@@ -1,0 +1,50 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+*.pyo
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Detect pipeline temp uploads / crops
+storage/
+
+# Experiment / combo dumps (should not reappear)
+combo_results/
+combo_results_yolo_first/
+test_output_images/
+*_results.json
+complete_images_analysis*.json
+qwen_json_fix_smoke.json
+enhanced_output.jpg
+dates.csv
+
+# Notebooks / local IDE
+*.ipynb
+.ipynb_checkpoints/
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Ultralytics / torch caches
+runs/
+*.pt.bak

@@ -1,0 +1,72 @@
+{
+  "brand": "MedExpiry",
+  "nav": {
+    "detection": "Detection",
+    "language": "Language",
+    "selectLanguage": "Select language"
+  },
+  "landing": {
+    "headline": "Know if your medicine is still safe — from a single pack photo.",
+    "support": "Upload a label. We read manufacturing and expiry dates, then tell you whether the pack is still valid.",
+    "cta": "Go to Detection",
+    "sectionTitle": "From pack photo to clear answer",
+    "sectionBody": "Snap or upload a medicine pack image. MedExpiry extracts manufacturing and expiry dates, checks whether expiry is still in the future, and speaks the result in your language — so anyone in the household can understand the status."
+  },
+  "detect": {
+    "eyebrow": "Detection",
+    "title": "Check a medicine pack",
+    "subtitle": "Upload a clear photo of the manufacturing and expiry area. Analysis can take a minute or two while the vision models run.",
+    "analyze": "Analyze pack",
+    "analyzing": "Analyzing…",
+    "loadingTitle": "Reading your pack label",
+    "loadingHint": "Reading manufacturing and expiry dates from your image. Please keep this tab open — this can take several minutes.",
+    "selectFirst": "Please select a medicine pack image first.",
+    "detectFailed": "Detection failed. Try another image."
+  },
+  "upload": {
+    "drop": "Drop a pack photo here, or click to browse",
+    "formats": "JPEG, PNG, WebP, or BMP",
+    "clear": "Clear image",
+    "invalidType": "Please choose a JPEG, PNG, WebP, or BMP image.",
+    "previewAlt": "Selected medicine pack preview"
+  },
+  "result": {
+    "eyebrow": "Result",
+    "title": "Expiry status",
+    "titleValid": "Not expired",
+    "titleExpired": "Expired",
+    "titleUnknown": "Expiry unclear",
+    "mfg": "Manufacturing date",
+    "exp": "Expiry date",
+    "listen": "Listen",
+    "speaking": "Speaking…",
+    "stop": "Stop",
+    "humanReview": "Flagged for human review",
+    "reviewNeeded": "Needs human review",
+    "reviewNotNeeded": "No human review needed",
+    "status": {
+      "valid": "Not expired",
+      "expired": "Expired",
+      "unknown": "Unable to determine"
+    },
+    "consensus": {
+      "match": "Models agree",
+      "mismatch": "Models disagree",
+      "low_confidence": "Low confidence"
+    }
+  },
+  "speech": {
+    "mfgFound": "Manufacturing date {{date}}.",
+    "mfgMissing": "Manufacturing date not found.",
+    "expFound": "Expiry date {{date}}.",
+    "expMissing": "Expiry date not found.",
+    "statusValid": "The medicine is not expired.",
+    "statusExpired": "The medicine has expired.",
+    "statusUnknown": "The expiry status could not be determined.",
+    "reviewNeeded": "This result needs human review.",
+    "reviewNotNeeded": "Human review is not required.",
+    "unsupported": "Speech is not supported in this browser.",
+    "unavailable": "A voice for this language may not be available on this device. Playing with the default voice.",
+    "error": "Could not play spoken summary."
+  }
+}
