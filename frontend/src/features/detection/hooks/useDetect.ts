@@ -59,7 +59,8 @@ export interface UseDetectReturn {
   isLoading: boolean;
   error: string | null;
   result: DetectResponse | null;
-  detect: (file: File) => Promise<DetectResponse | null>;
+  detect: (file: File, lang?: string) => Promise<DetectResponse | null>;
+  refreshDisplayLang: (lang: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -74,13 +75,13 @@ export function useDetect(): UseDetectReturn {
     setResult(null);
   }, []);
 
-  const detect = useCallback(async (file: File): Promise<DetectResponse | null> => {
+  const detect = useCallback(async (file: File, lang = "en"): Promise<DetectResponse | null> => {
     setIsLoading(true);
     setError(null);
     setResult(null);
 
     try {
-      const response = await detectService.detect(file);
+      const response = await detectService.detect(file, lang);
       setResult(response);
       return response;
     } catch (err) {
@@ -92,5 +93,16 @@ export function useDetect(): UseDetectReturn {
     }
   }, []);
 
-  return { isLoading, error, result, detect, reset };
+  const refreshDisplayLang = useCallback(async (lang: string) => {
+    if (!result) return;
+    const res = await detectService.assess({
+      final_mfg: result.final_mfg,
+      final_exp: result.final_exp,
+      status: result.status,
+      lang,
+    });
+    setResult({ ...result, assessment: res.assessment });
+  }, [result]);
+
+  return { isLoading, error, result, detect, refreshDisplayLang, reset };
 }

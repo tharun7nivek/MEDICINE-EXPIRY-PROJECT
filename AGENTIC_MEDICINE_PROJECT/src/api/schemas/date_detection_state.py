@@ -31,7 +31,13 @@ class DateDetectionState(TypedDict):
     """
 
     crop_path: str
-    """Absolute path to the saved cropped+upscaled date-region image."""
+    """Absolute path to the saved cropped+upscaled date-region image (raw RGB)."""
+
+    dewarped_crop_path: str
+    """Absolute path to trapezoid-dewarped + sharpened crop (helper for first_read)."""
+
+    morph_crop_path: str
+    """Absolute path to morphological binarized crop; empty until reflection runs."""
 
     crop_source: Literal["yolo", "full_image_fallback"]
     """

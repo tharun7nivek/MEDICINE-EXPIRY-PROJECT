@@ -41,12 +41,13 @@ SYSTEM_PROMPT = (
     '  "exp_confidence": "high"\n'
     "}\n"
     "Rules: extract only date values (not label prefixes like MFG/EXP); "
-    "use null when a date is missing or illegible; confidence is high, medium, low, or null."
+    "use null when a date is missing or illegible; confidence is high, medium, low, or null. "
+    "You see only the natural RGB crop (not a dewarped helper and not another reader's answer)."
 )
 
 USER_PROMPT = (
-    "IMPORTANT: This image is a CROPPED CLOSE-UP extracted from a medicine package label.\n"
-    "The crop was taken around the area where manufacturing and expiration dates are printed.\n\n"
+    "IMPORTANT: This image is a NATURAL RGB CROPPED CLOSE-UP of a medicine pack date field.\n"
+    "It is the unmodified crop (not dewarped). You do not see any other reader's answer.\n\n"
     "Transcribe the ACTUAL DATE VALUES only — NOT label prefixes.\n"
     "The image may contain:\n"
     "  Label prefixes: 'MFG', 'MFG.', 'MFD', 'MFG. DATE:', 'EXP', 'EXP.', 'EXP. DATE:', 'BB', 'USE BY'\n"

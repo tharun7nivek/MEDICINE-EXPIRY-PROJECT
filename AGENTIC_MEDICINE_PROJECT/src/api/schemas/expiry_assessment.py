@@ -39,6 +39,18 @@ class ExpiryAssessment(BaseModel):
         description="ISO date of the last day the pack is considered valid.",
     )
     exp_precision: Optional[DatePrecision] = None
+    mfg_display: Optional[str] = Field(
+        default=None,
+        description="Localized MFG string for UI/TTS (backend-formatted).",
+    )
+    exp_display: Optional[str] = Field(
+        default=None,
+        description="Localized EXP string for UI/TTS (backend-formatted).",
+    )
+    display_lang: str = Field(
+        default="en",
+        description="Language code used for mfg_display / exp_display.",
+    )
 
 
 class AssessRequest(BaseModel):
@@ -47,6 +59,10 @@ class AssessRequest(BaseModel):
     final_mfg: Optional[str] = None
     final_exp: Optional[str] = None
     status: PipelineStatus = "accepted"
+    lang: Optional[str] = Field(
+        default="en",
+        description="UI language code (en, hi, ta, …) for display/TTS date strings.",
+    )
 
 
 class AssessResponse(BaseModel):

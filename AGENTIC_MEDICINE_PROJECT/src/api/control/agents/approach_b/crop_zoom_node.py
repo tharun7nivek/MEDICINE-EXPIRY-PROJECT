@@ -40,6 +40,8 @@ import numpy as np
 from ultralytics import YOLO
 
 from src.api.schemas.date_detection_state import DateDetectionState
+from src.api.utils.image_preprocess import dewarp_and_sharpen
+from src.api.config.settings import RAW_CROP_PIPELINE
 
 logger = logging.getLogger(__name__)
 
@@ -204,11 +206,27 @@ def _write_crop(image_path: str, crop: np.ndarray) -> str:
     return crop_path
 
 
-def _run_crop_pipeline(image_path: str) -> tuple[str, list[int], str]:
+def _write_dewarped_crop(crop_path: str, crop: np.ndarray) -> str:
+    """Write dewarp+sharpen beside the raw crop. On failure, reuse *crop_path*."""
+    base, ext = os.path.splitext(crop_path)
+    dewarped_path = f"{base}_dewarped{ext}"
+    try:
+        dewarped = dewarp_and_sharpen(crop)
+        cv2.imwrite(dewarped_path, dewarped)
+        return dewarped_path
+    except Exception as exc:
+        logger.warning(
+            "crop_zoom_node: dewarp write failed (%s); using raw crop.",
+            exc,
+        )
+        return crop_path
+
+
+def _run_crop_pipeline(image_path: str) -> tuple[str, str, list[int], str]:
     """
     Synchronous OpenCV + YOLO pipeline (imread → detect → crop → imwrite).
 
-    Returns (crop_path, bbox_2d, crop_source).
+    Returns (crop_path, dewarped_crop_path, bbox_2d, crop_source).
     """
     img = cv2.imread(image_path)
     if img is None:
@@ -219,7 +237,11 @@ def _run_crop_pipeline(image_path: str) -> tuple[str, list[int], str]:
     yolo_rect = _get_yolo_crop_rect(img)
     crop, bbox_2d, crop_source = _prepare_crop(img, yolo_rect)
     crop_path = _write_crop(image_path, crop)
-    return crop_path, bbox_2d, crop_source
+    if RAW_CROP_PIPELINE:
+        dewarped_crop_path = crop_path
+    else:
+        dewarped_crop_path = _write_dewarped_crop(crop_path, crop)
+    return crop_path, dewarped_crop_path, bbox_2d, crop_source
 
 
 # ---------------------------------------------------------------------------
@@ -231,14 +253,16 @@ async def crop_zoom_node(state: DateDetectionState) -> DateDetectionState:
     LangGraph node — crop_zoom (deterministic, no LLM).
 
     YOLO-only localization.  On miss, uses the full image as the crop.
-    Sets crop_path, bbox_2d, and crop_source ("yolo" | "full_image_fallback").
+    Sets crop_path, dewarped_crop_path, bbox_2d, and crop_source.
+    Dewarp runs on the crop only (never before YOLO).
     """
     image_path: str = state["image_path"]
-    crop_path, bbox_2d, crop_source = await asyncio.to_thread(
+    crop_path, dewarped_crop_path, bbox_2d, crop_source = await asyncio.to_thread(
         _run_crop_pipeline, image_path
     )
 
     state["crop_path"] = crop_path
+    state["dewarped_crop_path"] = dewarped_crop_path
     state["bbox_2d"] = bbox_2d
     state["crop_source"] = crop_source  # type: ignore[typeddict-item]
     return state

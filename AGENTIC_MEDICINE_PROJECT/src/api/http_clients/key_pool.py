@@ -56,7 +56,8 @@ QWEN36_GROQ = "qwen/qwen3.6-27b"
 # Call defaults:
 # - omni30b: reasoning burns max_tokens → empty content unless budget is high;
 #            disable thinking for OCR / adjudication when possible.
-# - qwen36:  thinking also burns budget; use 4096 so JSON still fits.
+# - qwen36: JSON date OCR is small; Groq TPM counts prompt + max_tokens.
+#   4096 output budget with two crop images exceeded the 8k TPM cap.
 MODEL_SPECS: dict[str, dict[str, Any]] = {
     OMNI30B: {
         "provider": "openrouter",
@@ -65,7 +66,7 @@ MODEL_SPECS: dict[str, dict[str, Any]] = {
     },
     QWEN36_GROQ: {
         "provider": "groq",
-        "max_tokens": 4096,
+        "max_tokens": 1024,
         # Groq: thinking-on + json_object often → json_validate_failed.
         # Use reasoning_effort=none (Groq-supported; chat_template_kwargs is not).
         "extra_body": {"reasoning_effort": "none"},
@@ -80,7 +81,11 @@ def _is_rate_limited_or_not_found(exc: Exception) -> tuple[bool, bool]:
     """
     status = getattr(exc, "status_code", None)
     err_str = str(exc).lower()
-    is_429 = status == 429 or "429" in err_str or "rate_limit" in err_str
+    is_429 = (
+        status == 429
+        or "429" in err_str
+        or ("rate_limit" in err_str and "request too large" not in err_str)
+    )
     is_404 = status == 404 or "404" in err_str or "unavailable" in err_str or "not found" in err_str
     return is_429, is_404
 
@@ -111,7 +116,7 @@ def resolve_model_spec(model: str) -> dict[str, Any]:
         return dict(MODEL_SPECS[model])
     # Heuristic fallback
     if model.startswith("qwen/") or "groq" in model.lower():
-        return {"provider": "groq", "max_tokens": 4096, "extra_body": None}
+        return {"provider": "groq", "max_tokens": 1024, "extra_body": None}
     return {"provider": "openrouter", "max_tokens": 4096, "extra_body": None}
 
 

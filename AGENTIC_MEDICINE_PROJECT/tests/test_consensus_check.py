@@ -12,6 +12,8 @@ def _base_state(**overrides):
         "attempt": 0,
         "bbox_2d": None,
         "crop_path": "",
+        "dewarped_crop_path": "",
+        "morph_crop_path": "",
         "crop_source": "yolo",
         "first_result": {
             "mfg_date_raw": "06/2023",

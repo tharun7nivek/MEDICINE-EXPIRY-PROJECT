@@ -12,7 +12,7 @@ Endpoints (mounted under ``/api/v1``):
 
 from __future__ import annotations
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, Request
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, Request
 
 from src.api.core.services.detect_service import DetectService
 from src.api.core.services.expiry_assessment_service import ExpiryAssessmentService
@@ -48,6 +48,7 @@ def api_root() -> ApiRootResponse:
             "health": "GET /api/v1/health",
             "detect": "POST /api/v1/detect",
             "assess": "POST /api/v1/assess",
+            "speech": "POST /api/v1/speech/expiry-summary",
         },
     )
 
@@ -62,6 +63,7 @@ def health_check(request: Request) -> HealthResponse:
     openrouter_keys = int(runtime.get("openrouter_keys", 0))
     groq_keys = int(runtime.get("groq_keys", 0))
     storage_dir = str(runtime.get("storage_dir", ""))
+    tts_configured = bool(runtime.get("tts_configured", False))
 
     status = "ok" if yolo_loaded and openrouter_keys > 0 else "degraded"
     return HealthResponse(
@@ -71,16 +73,21 @@ def health_check(request: Request) -> HealthResponse:
         openrouter_keys=openrouter_keys,
         groq_keys=groq_keys,
         storage_dir=storage_dir,
+        tts_configured=tts_configured,
     )
 
 
 @router.post("/detect", response_model=DetectResponse)
-async def detect(file: UploadFile = File(...)) -> DetectResponse:
+async def detect(
+    file: UploadFile = File(...),
+    lang: str = Form("en"),
+) -> DetectResponse:
     """
     Run the YOLO-first LangGraph date detection pipeline on an uploaded image.
 
-    Multipart form field: ``file`` (JPEG/PNG/WebP/BMP).
-    Response includes ``assessment`` (expired / not expired + human review).
+    Multipart form fields: ``file`` (JPEG/PNG/WebP/BMP), optional ``lang``
+    (UI language code, e.g. ta). Dates in ``assessment.mfg_display`` /
+    ``exp_display`` are formatted on the server for that language.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="Upload must include a filename.")
@@ -104,7 +111,7 @@ async def detect(file: UploadFile = File(...)) -> DetectResponse:
             return data
 
     try:
-        return await _service.detect_upload(_Upload())
+        return await _service.detect_upload(_Upload(), lang=lang)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:

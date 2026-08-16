@@ -21,7 +21,7 @@ This is the source-of-truth design for the current MedExpiry build
 2. Cross-check with two independent VLM crop readers; adjudicate only when needed.
 3. Never let an LLM be the last word on validity — deterministic parse + calendar checks.
 4. Return an explicit **expired / not expired / unknown** verdict and a separate **human-review** flag for the UI and TTS.
-5. Support multilingual UI + browser speech (no server TTS).
+5. Support multilingual UI + server TTS (Edge neural voices, no TTS API key) for Listen.
 
 ---
 
@@ -29,17 +29,19 @@ This is the source-of-truth design for the current MedExpiry build
 
 ```mermaid
 flowchart LR
-  UI["MedExpiry frontend<br/>Vite / React / i18n / Web Speech"]
+  UI["MedExpiry frontend<br/>Vite / React / i18n"]
   API["FastAPI /api/v1<br/>port 8000"]
   Graph["LangGraph Approach B<br/>YOLO-first"]
   Assess["ExpiryAssessmentService<br/>pack_date_parser"]
+  TTS["Edge neural TTS"]
 
   UI -->|"POST /detect multipart file"| API
   API --> Graph
   Graph -->|"final_mfg / final_exp / status"| Assess
   Assess -->|"DetectResponse.assessment"| API
   API --> UI
-  UI -->|"Listen / Stop"| Speech["speechSynthesis"]
+  UI -->|"POST /speech/expiry-summary"| API
+  API --> TTS
 ```
 
 **Request flow (frontend):** Component → `useDetect` → `detectService` → axios (`timeout` 300000 ms) → `POST /api/v1/detect`.  
@@ -54,16 +56,25 @@ The UI **does not** parse dates or decide expiry; it displays `result.assessment
 
 ```mermaid
 flowchart TD
-  START([image input]) --> CZ["crop_zoom<br/>YOLO + OpenCV"]
-  CZ --> FR["first_read<br/>qwen/qwen3.6-27b @ Groq"]
-  FR --> SR["second_read<br/>qwen/qwen3.6-27b @ Groq"]
-  SR --> CC{"consensus_check<br/>deterministic"}
-  CC -->|match| VAL["validate<br/>pack_date_parser"]
-  CC -->|mismatch / low_confidence| REF["reflection<br/>nemotron-3-nano-omni @ OpenRouter"]
+  START([image input]) --> CZ["crop_zoom YOLO best.pt"]
+  CZ --> RAW["raw RGB crop"]
+  CZ --> DW["dewarped plus sharpen crop"]
+  RAW --> FR["first_read qwen/qwen3.6-27b Groq"]
+  DW --> FR
+  RAW --> SR["second_read qwen/qwen3.6-27b Groq raw only"]
+  FR --> CC{"consensus_check deterministic"}
+  SR --> CC
+  CC -->|match| VAL["validate pack_date_parser"]
+  CC -->|mismatch / low_confidence| REF["reflection nemotron-3-nano-omni OpenRouter"]
+  RAW --> REF
+  REF --> MORPH["lazy morph crop"]
+  MORPH --> REF
   REF --> VAL
   VAL -->|pass| OK([status: accepted])
   VAL -->|fail| HR([status: human_review])
 ```
+
+There is **no** four-layer VLM waterfall. Dewarp and morph are extra **views** on the YOLO crop, not serial retries. Dewarp/morph never run before YOLO.
 
 ### 3.1 State (`DateDetectionState`)
 
@@ -73,7 +84,9 @@ Defined in `src/api/schemas/date_detection_state.py`:
 |-------|------|
 | `image_path`, `image_b64`, `attempt` | Inputs |
 | `bbox_2d` | `[x1,y1,x2,y2]` from YOLO union rect (or full image on fallback) |
-| `crop_path`, `crop_source` | Crop artifact; `yolo` \| `full_image_fallback` |
+| `crop_path`, `crop_source` | Raw RGB crop; `yolo` \| `full_image_fallback` |
+| `dewarped_crop_path` | Trapezoid-dewarped + sharpened helper (from `crop_zoom`) |
+| `morph_crop_path` | Morphological helper; empty until reflection runs |
 | `first_result`, `second_result` | Reader JSON (raw dates + confidence) |
 | `consensus_status` | `match` \| `mismatch` \| `low_confidence` |
 | `reflection_result` | Present only if reflection ran |
@@ -83,16 +96,16 @@ Defined in `src/api/schemas/date_detection_state.py`:
 
 There is **no** `ground_and_read` / `ground_result` — localization is YOLO-only.
 
-### 3.2 Node summary
+### 3.2 Node summary (model at every node)
 
-| Node | Type | Implementation | Notes |
-|------|------|----------------|-------|
-| `crop_zoom` | Deterministic | `crop_zoom_node.py` | YOLO `best.pt`; 15% pad; min crop width **500**; miss → full-image fallback |
-| `first_read` | VLM | `first_read_node.py` | Crop only; does not see second reader |
-| `second_read` | VLM | `second_read_node.py` | Crop only; independent of first answer |
-| `consensus_check` | Deterministic | `consensus_check_node.py` | Normalize + compare; low confidence → reflection; **label-prefix guard** (see below) |
-| `reflection` | VLM | `reflection_node.py` | Runs on mismatch / low confidence only |
-| `validate` | Deterministic | `validate_node.py` | Shared `pack_date_parser`; sets `validation` + `status` |
+| Node | Type | Model / method | Implementation | Notes |
+|------|------|----------------|----------------|-------|
+| `crop_zoom` | Deterministic | YOLO `best.pt` + OpenCV | `crop_zoom_node.py` | 15% pad; min crop width **500**; miss → full-image fallback; writes raw + dewarped crops |
+| `first_read` | VLM | **`qwen/qwen3.6-27b`** @ Groq | `first_read_node.py` | **Two images in one call:** Image 1 natural RGB (primary), Image 2 dewarped+sharpened (helper). Prefer raw on conflict. |
+| `second_read` | VLM | **`qwen/qwen3.6-27b`** @ Groq | `second_read_node.py` | **Raw RGB crop only.** Independent of first answer and of the dewarp helper. |
+| `consensus_check` | Deterministic | none (string compare) | `consensus_check_node.py` | Normalize + compare; low confidence → reflection; **label-prefix guard** |
+| `reflection` | VLM | **`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`** @ OpenRouter | `reflection_node.py` | Mismatch / low confidence only. Image 1 raw RGB (primary), Image 2 morph (lazy helper). |
+| `validate` | Deterministic | `pack_date_parser` | `validate_node.py` | Sets `validation` + `status` |
 
 ### 3.3 Model pins
 
@@ -100,8 +113,12 @@ From `src/api/http_clients/key_pool.py`:
 
 | Stage | Model ID | Provider |
 |-------|----------|----------|
-| `first_read` / `second_read` | `qwen/qwen3.6-27b` (`QWEN36_GROQ`) | Groq |
+| Localization | Ultralytics YOLO `best.pt` | local weights |
+| `first_read` | `qwen/qwen3.6-27b` (`QWEN36_GROQ`) | Groq |
+| `second_read` | `qwen/qwen3.6-27b` (`QWEN36_GROQ`) | Groq |
+| `consensus_check` | — | deterministic |
 | `reflection` | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` (`OMNI30B`) | OpenRouter |
+| `validate` | — | `pack_date_parser` |
 
 Emergency / alternate entry in `MODEL_SPECS`: `nvidia/nemotron-nano-12b-v2-vl:free` (not the primary path).
 
@@ -113,6 +130,20 @@ Keys: round-robin pools — `OPENROUTER_API_KEY` (+ `_2`…`_4`), `GROQ_API_KEY`
 - Classes: date-region segmentation (`MFD_DATE` / `mfddatexp`); union mask → bbox + padding.
 - YOLO miss → `crop_source=full_image_fallback`, crop = full image, `bbox_2d=[0,0,w,h]`.
 - VLMs never propose `bbox_2d`.
+- Dewarp and morph **never** run on the full photo before YOLO.
+
+### 3.4.1 Crop helper views (`image_preprocess.py`)
+
+Paper-parity geometry (not camera undistort, not a four-layer waterfall):
+
+| Helper | When | Params |
+|--------|------|--------|
+| Trapezoid dewarp + 3×3 sharpen | After crop (always) | `offset = min(50, w//8)`; dest bottom pinched inward; `INTER_CUBIC` + `BORDER_REPLICATE`; sharpen kernel `[[-1,-1,-1],[-1,9,-1],[-1,-1,-1]]` |
+| Morphological | Reflection only (lazy) | Gray → adaptive mean INV block **11**, C **10** → 2×2 close → invert (black on white) |
+
+Files: `{stem}_crop{ext}` (raw), `{stem}_crop_dewarped{ext}`, `{stem}_crop_morph.png`.
+
+**Accuracy-safety prompts:** first_read transcribes from Image 1 (raw); Image 2 is helper; on conflict prefer raw unless a digit is clearly more readable on dewarped. second_read never sees dewarp. reflection prefers raw; morph is extra reference only.
 
 ### 3.5 Consensus rules
 
@@ -165,6 +196,8 @@ Embedded on every detect response; also available standalone.
 | `mfg_iso` / `exp_iso` | Normalized ISO dates |
 | `exp_valid_through` | Last valid day (ISO) |
 | `exp_precision` | `day` \| `month` |
+| `mfg_display` / `exp_display` | Localized month-name strings for UI and TTS (from `lang`) |
+| `display_lang` | Language used for those strings (`en`, `ta`, …) |
 
 **Important:** Expired vs not-expired is independent of human-review. The UI shows both.
 
@@ -209,8 +242,8 @@ Legacy routes `/detect` and `/detect-zero-shot` (outside `/api/v1`) are **remove
 | `*` | Redirect home |
 
 **i18n:** `en`, `hi`, `ta`, `te`, `mr`, `bn`, `gu`, `kn`, `ml`, `pa` (persisted in `localStorage`).  
-**TTS:** Web Speech API only (`useSpeech`); language tags like `en-IN`, `hi-IN`. Stop cancels `speechSynthesis`.  
-**API base:** `VITE_API_URL` → default `http://127.0.0.1:8000`; axios timeout **5 minutes**.
+**TTS:** `POST /api/v1/speech/expiry-summary` (Microsoft Edge neural voices via `edge-tts`, no API key). Server renders one paragraph (status, dates, review) and returns MP3. Frontend plays with `HTMLAudioElement`. Stop aborts the fetch and pauses audio.  
+**API base:** `VITE_API_URL` → default `http://127.0.0.1:8000`; axios timeout **5 minutes** (speech uses 30s).
 
 Result card uses:
 
@@ -235,7 +268,7 @@ npm install
 npm run dev   # http://localhost:5173
 ```
 
-**Env (backend):** at least one `OPENROUTER_API_KEY` and one `GROQ_API_KEY`; add `_2…N` (any count) or CSV `*_API_KEYS` for rotation. Optional `STORAGE_DIR`, `CORS_ORIGINS`, `RETAIN_DETECT_TEMPS`.  
+**Env (backend):** at least one `OPENROUTER_API_KEY` and one `GROQ_API_KEY`; add `_2…N` (any count) or CSV `*_API_KEYS` for rotation. Optional `STORAGE_DIR`, `CORS_ORIGINS`, `RETAIN_DETECT_TEMPS`, `RAW_CROP_PIPELINE` (default `true` = raw crops only; `false` = dewarp on first_read + morph on reflection). Listen uses Edge TTS (no extra key).  
 **Env (frontend):** `VITE_API_URL=http://127.0.0.1:8000`.
 
 **Tests:** `uv run python -m pytest` (unit always; e2e detect needs keys).
@@ -246,11 +279,15 @@ npm run dev   # http://localhost:5173
 
 | Stage | Implementation |
 |-------|----------------|
-| Localization | **YOLO-first** (`best.pt` segmentation) |
-| Dual readers | Dual **`qwen/qwen3.6-27b`** (Groq) |
-| Reflection | **`nemotron-3-nano-omni`** (OpenRouter), on disagreement / low confidence |
+| Localization | **YOLO `best.pt`** segmentation (never dewarped first) |
+| Crop helpers | Dewarp+sharpen extra file; morph only on reflection |
+| first_read | **`qwen/qwen3.6-27b`** (Groq) — raw + dewarped, prefer raw |
+| second_read | **`qwen/qwen3.6-27b`** (Groq) — raw only |
+| consensus_check | Deterministic string compare |
+| Reflection | **`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`** (OpenRouter) — raw + morph |
 | Validate | **`pack_date_parser`** + month-end calendar checks |
 | Client verdict | **`assessment`** on detect + **`POST /assess`** |
-| Frontend | MedExpiry UI, 10 languages, Web Speech |
+| Speech | **`POST /speech/expiry-summary`** Edge neural TTS |
+| Frontend | MedExpiry UI, 10 languages, server TTS playback |
 
-Intentional design: independent dual crop reads, low-confidence → reflection, unresolved reflection → human review, deterministic validate as last gate, round-robin key pools.
+Intentional design: independent dual crop reads (second reader still raw-only), low-confidence → reflection, unresolved reflection → human review, deterministic validate as last gate, round-robin key pools.

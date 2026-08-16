@@ -56,17 +56,7 @@
     }
   },
   "speech": {
-    "mfgFound": "Manufacturing date {{date}}.",
-    "mfgMissing": "Manufacturing date not found.",
-    "expFound": "Expiry date {{date}}.",
-    "expMissing": "Expiry date not found.",
-    "statusValid": "The medicine is not expired.",
-    "statusExpired": "The medicine has expired.",
-    "statusUnknown": "The expiry status could not be determined.",
-    "reviewNeeded": "This result needs human review.",
-    "reviewNotNeeded": "Human review is not required.",
-    "unsupported": "Speech is not supported in this browser.",
-    "unavailable": "A voice for this language may not be available on this device. Playing with the default voice.",
+    "loading": "Preparing audio…",
     "error": "Could not play spoken summary."
   }
 }

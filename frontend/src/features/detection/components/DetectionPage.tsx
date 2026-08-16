@@ -9,9 +9,14 @@ import DetectionResultCard from "./DetectionResultCard";
 import ImageUploadZone from "./ImageUploadZone";
 
 export default function DetectionPage() {
-  const { t } = useTranslation();
-  const { isLoading, error, result, detect, reset } = useDetect();
-  const { speakExpirySummary, cancel: cancelSpeech, isSpeaking } = useSpeech();
+  const { t, i18n } = useTranslation();
+  const { isLoading, error, result, detect, refreshDisplayLang, reset } = useDetect();
+  const {
+    speakExpirySummary,
+    cancel: cancelSpeech,
+    isSpeaking,
+    isLoadingSpeech,
+  } = useSpeech();
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -20,6 +25,11 @@ export default function DetectionPage() {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    if (!result) return;
+    void refreshDisplayLang(i18n.language);
+  }, [i18n.language]);
 
   const clearSelection = useCallback(() => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -46,33 +56,25 @@ export default function DetectionPage() {
       return;
     }
     cancelSpeech();
-    const response = await detect(file);
+    const response = await detect(file, i18n.language);
     if (!response) {
       toast.error(t("detect.detectFailed"));
     }
   };
 
-  const onListen = () => {
+  const onListen = async () => {
     if (!result) return;
 
-    const outcome = speakExpirySummary(
-      result.final_mfg,
-      result.final_exp,
+    const outcome = await speakExpirySummary(
+      i18n.language,
+      result.assessment.mfg_display || result.final_mfg,
+      result.assessment.exp_display || result.final_exp,
       result.assessment.expiry_status,
       result.assessment.needs_human_review
     );
 
-    if (!outcome.ok) {
-      toast.error(
-        outcome.error === "unsupported"
-          ? t("speech.unsupported")
-          : t("speech.error")
-      );
-      return;
-    }
-
-    if (outcome.voiceUnavailable) {
-      toast(t("speech.unavailable"));
+    if (!outcome.ok && !outcome.cancelled) {
+      toast.error(t("speech.error"));
     }
   };
 
@@ -156,6 +158,7 @@ export default function DetectionPage() {
               onListen={onListen}
               onStopSpeech={cancelSpeech}
               isSpeaking={isSpeaking}
+              isLoadingSpeech={isLoadingSpeech}
             />
           )}
         </div>

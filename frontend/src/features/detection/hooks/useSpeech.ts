@@ -1,139 +1,120 @@
-import { useCallback, useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { getSpeechLang } from "../../../i18n";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExpiryStatus } from "../types/detect.types";
+import { detectService } from "../services/detectService";
 
-export type SpeechErrorCode = "unsupported" | "error";
+export type SpeechErrorCode = "error";
 
 export interface SpeakResult {
   ok: boolean;
   error?: SpeechErrorCode;
-  /** True when no matching voice was found for the current locale. */
-  voiceUnavailable?: boolean;
+  cancelled?: boolean;
 }
 
-function findVoiceForLang(lang: string, localeCode: string): SpeechSynthesisVoice | null {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-    return null;
-  }
-
-  const voices = window.speechSynthesis.getVoices();
-  if (voices.length === 0) return null;
-
-  const exact = voices.find((v) => v.lang === lang || v.lang.replace("_", "-") === lang);
-  if (exact) return exact;
-
-  const prefix = voices.find(
-    (v) =>
-      v.lang.toLowerCase().startsWith(localeCode.toLowerCase()) ||
-      v.lang.toLowerCase().startsWith(lang.slice(0, 2).toLowerCase())
-  );
-  return prefix ?? null;
+function revokeUrl(url: string | null) {
+  if (url) URL.revokeObjectURL(url);
 }
 
 /**
- * Web Speech API wrapper for localized expiry summaries.
- * Cancels any in-flight utterance before speaking again.
+ * Plays a server-synthesized expiry summary (Edge neural TTS).
  */
 export function useSpeech() {
-  const { t, i18n } = useTranslation();
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isLoadingSpeech, setIsLoadingSpeech] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const cancel = useCallback(() => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
+  const stopPlayback = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+      audioRef.current = null;
     }
+    revokeUrl(objectUrlRef.current);
+    objectUrlRef.current = null;
     setIsSpeaking(false);
+    setIsLoadingSpeech(false);
   }, []);
 
   useEffect(() => {
     return () => {
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
+      stopPlayback();
     };
-  }, []);
-
-  // Chrome loads voices asynchronously; warm the cache when language changes.
-  useEffect(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
-    const warm = () => {
-      void window.speechSynthesis.getVoices();
-    };
-    warm();
-    window.speechSynthesis.addEventListener("voiceschanged", warm);
-    return () => {
-      window.speechSynthesis.removeEventListener("voiceschanged", warm);
-    };
-  }, [i18n.language]);
-
-  const speak = useCallback(
-    (text: string): SpeakResult => {
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-        return { ok: false, error: "unsupported" };
-      }
-
-      const localeCode = i18n.language.split("-")[0] ?? "en";
-      const lang = getSpeechLang(localeCode);
-      const voice = findVoiceForLang(lang, localeCode);
-      const voiceUnavailable = voice == null;
-
-      window.speechSynthesis.cancel();
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = lang;
-      if (voice) utterance.voice = voice;
-
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
-
-      try {
-        window.speechSynthesis.speak(utterance);
-        return { ok: true, voiceUnavailable };
-      } catch {
-        setIsSpeaking(false);
-        return { ok: false, error: "error" };
-      }
-    },
-    [i18n.language]
-  );
+  }, [stopPlayback]);
 
   const speakExpirySummary = useCallback(
-    (
+    async (
+      lang: string,
       mfg: string | null,
       exp: string | null,
       status: ExpiryStatus,
       needsReview = false
-    ): SpeakResult => {
-      const mfgPart = mfg
-        ? t("speech.mfgFound", { date: mfg })
-        : t("speech.mfgMissing");
-      const expPart = exp
-        ? t("speech.expFound", { date: exp })
-        : t("speech.expMissing");
+    ): Promise<SpeakResult> => {
+      stopPlayback();
 
-      const statusKey =
-        status === "valid"
-          ? "speech.statusValid"
-          : status === "expired"
-            ? "speech.statusExpired"
-            : "speech.statusUnknown";
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setIsLoadingSpeech(true);
 
-      const reviewPart = needsReview
-        ? t("speech.reviewNeeded")
-        : t("speech.reviewNotNeeded");
+      try {
+        const blob = await detectService.speakExpirySummary(
+          {
+            lang: lang.split("-")[0] ?? "en",
+            expiry_status: status,
+            mfg_display: mfg,
+            exp_display: exp,
+            needs_human_review: needsReview,
+          },
+          controller.signal
+        );
 
-      return speak(`${mfgPart} ${expPart} ${t(statusKey)} ${reviewPart}`);
+        if (controller.signal.aborted) {
+          return { ok: false, cancelled: true };
+        }
+
+        const objectUrl = URL.createObjectURL(blob);
+        objectUrlRef.current = objectUrl;
+        const audio = new Audio(objectUrl);
+        audioRef.current = audio;
+
+        audio.onended = () => {
+          setIsSpeaking(false);
+          revokeUrl(objectUrlRef.current);
+          objectUrlRef.current = null;
+          audioRef.current = null;
+        };
+        audio.onerror = () => {
+          setIsSpeaking(false);
+          setIsLoadingSpeech(false);
+          revokeUrl(objectUrlRef.current);
+          objectUrlRef.current = null;
+          audioRef.current = null;
+        };
+
+        setIsLoadingSpeech(false);
+        setIsSpeaking(true);
+        await audio.play();
+        return { ok: true };
+      } catch {
+        if (controller.signal.aborted) {
+          return { ok: false, cancelled: true };
+        }
+        setIsLoadingSpeech(false);
+        setIsSpeaking(false);
+        return { ok: false, error: "error" };
+      }
     },
-    [speak, t]
+    [stopPlayback]
   );
 
   return {
-    speak,
     speakExpirySummary,
-    cancel,
+    cancel: stopPlayback,
     isSpeaking,
+    isLoadingSpeech,
   };
 }

@@ -177,7 +177,7 @@ def build():
     meta = doc.add_paragraph()
     meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
     meta.paragraph_format.space_after = Pt(18)
-    r = meta.add_run("Version 1.0  ·  August 2026  ·  Written for non-technical readers")
+    r = meta.add_run("Version 1.1  ·  August 2026  ·  Written for non-technical readers")
     set_run_font(r, size=10, color=MUTED)
 
     add_callout(
@@ -274,15 +274,19 @@ def build():
         doc,
         "Before trying to read tiny printed characters, the system first tries to "
         "locate the region on the pack that usually holds manufacturing and expiry "
-        "markings. This is done with a specialist detector trained for those date "
-        "regions (not a general “chat” model inventing a box).",
+        "markings. This is done with a specialist detector (YOLO) trained for those date "
+        "regions (not a general “chat” model inventing a box). After the crop is made, "
+        "the system also saves a mildly straightened and sharpened helper picture of "
+        "that same crop. The helper is extra context — it does not replace the real photo, "
+        "and it is never applied before the date-area detector runs.",
     )
     add_heading_styled(doc, "Scenarios in this step", 3)
     add_bullet(
         doc,
         "The detector finds the date region. The system crops that area, adds a little "
         "padding around the edges (so letters are not cut off), and enlarges small crops "
-        "so the next steps can read them more clearly.",
+        "so the next steps can read them more clearly. A straightened helper copy of "
+        "that crop is saved at the same time.",
         bold_lead="Success — ",
     )
     add_bullet(
@@ -304,10 +308,14 @@ def build():
     add_heading_styled(doc, "Step 2 — First careful reading", 2)
     add_body(
         doc,
-        "A vision model looks only at the cropped date area and tries to transcribe "
-        "exactly what is printed for manufacturing and expiry — character by character. "
-        "It is instructed not to invent a “plausible” date when text is unreadable. "
-        "It also reports how confident it feels about each field (high, medium, or low).",
+        "A vision model (Qwen 3.6 27B, via Groq) looks at two pictures of the same "
+        "cropped date area in one step: the natural close-up (primary) and the "
+        "straightened, sharpened helper. It must transcribe from the natural photo. "
+        "It may use the helper only to resolve an unclear digit. If the two views "
+        "disagree, it is told to prefer the natural photo unless a character is clearly "
+        "more readable on the helper. It is instructed not to invent a “plausible” date "
+        "when text is unreadable. It also reports how confident it feels about each "
+        "field (high, medium, or low).",
     )
     add_heading_styled(doc, "Scenarios in this step", 3)
     add_bullet(doc, "Both dates are clear → high confidence values are returned.", bold_lead="Clear print — ")
@@ -318,9 +326,10 @@ def build():
     add_heading_styled(doc, "Step 3 — Second independent reading", 2)
     add_body(
         doc,
-        "A second reading is done on the same crop. Critically, this second reader "
-        "does not see the first reader’s answer. That prevents the second check from "
-        "simply copying the first mistake. Independence is a major quality feature.",
+        "A second reading is done with the same kind of model (Qwen 3.6 27B on Groq) "
+        "on the natural RGB crop only — not the straightened helper, and not the first "
+        "reader’s answer. That keeps the second check independent, so it cannot simply "
+        "copy the first mistake or a warp artifact.",
     )
     add_heading_styled(doc, "Scenarios in this step", 3)
     add_bullet(doc, "Same dates as the first reading → strong agreement later.", bold_lead="Agreement path — ")
@@ -375,9 +384,13 @@ def build():
     add_heading_styled(doc, "Step 5 — Extra careful review (only when needed)", 2)
     add_body(
         doc,
-        "When readings disagree or look unsure, a third vision review looks at the crop "
-        "again with both candidate answers. It is asked to justify the choice from what "
-        "is visually present — not from what “sounds like a normal medicine date.”",
+        "When readings disagree or look unsure, a third vision review "
+        "(Nemotron Omni on OpenRouter) looks at the natural crop again with both "
+        "candidate answers, plus a high-contrast black-and-white helper made only "
+        "for this step (morphological processing). It must prefer the natural photo "
+        "and use the high-contrast helper only when a disputed character is clearer "
+        "there. It is asked to justify the choice from what is visually present — "
+        "not from what “sounds like a normal medicine date.”",
     )
     add_heading_styled(doc, "Scenarios in this step", 3)
     add_bullet(
@@ -528,20 +541,20 @@ def build():
     )
     add_heading_styled(doc, "How speech works", 2)
     add_bullet(doc, "The server decides the facts (dates, expired or not, review needed).")
-    add_bullet(doc, "The app builds a short spoken sentence in the selected language.")
-    add_bullet(doc, "The device’s built-in speech voices read it aloud (no separate audio server required).")
-    add_bullet(doc, "Listen starts speech; Stop immediately cancels it.")
     add_bullet(
         doc,
-        "If a matching voice for that language is not installed on the device, the app may "
-        "fall back to a default voice and show a gentle notice.",
+        "When you tap Listen, the server builds one spoken paragraph in the selected "
+        "language (verdict first, then dates, then whether human review is needed) "
+        "and returns audio from Microsoft Edge neural text-to-speech (no extra API key).",
     )
+    add_bullet(doc, "The app plays that audio; Stop immediately cancels playback.")
     add_callout(
         doc,
         "Design choice in plain words",
-        "Screen labels and speech wording live with the app (so the experience feels fast and "
-        "local). The hard facts — whether the medicine is expired — are decided on the server "
-        "so every client gets the same truth.",
+        "Screen labels live with the app (so the interface feels fast and local). "
+        "Spoken wording and the voice are produced on the server so every language "
+        "we list can actually be heard, not only English and Hindi. The hard facts — "
+        "whether the medicine is expired — are still decided with the same calendar rules.",
     )
 
     # ---- 6. Quality ----
@@ -569,7 +582,7 @@ def build():
     add_heading_styled(doc, "Known limits (honest)", 2)
     add_bullet(doc, "Very damaged, faded, or handwritten overprints may remain unreadable.")
     add_bullet(doc, "Unusual date formats outside the supported set may need human review.")
-    add_bullet(doc, "Spoken quality depends on the voices installed on the user’s phone or computer.")
+    add_bullet(doc, "Spoken audio is generated on the server so it is not limited to voices installed on the phone.")
     add_bullet(doc, "The tool reads printed dates; it does not verify whether the medicine was stored correctly.")
 
     # ---- 7. End-to-end walkthrough ----
@@ -579,8 +592,8 @@ def build():
         "Imagine a blister pack photo showing manufacturing APR.2024 and expiry MAR.2027, "
         "taken in August 2026.",
     )
-    add_bullet(doc, "Date area is found and cropped.")
-    add_bullet(doc, "First reading returns APR.2024 and MAR.2027 with good confidence.")
+    add_bullet(doc, "Date area is found and cropped; a straightened helper copy is saved.")
+    add_bullet(doc, "First reading (Qwen 3.6 27B) sees the natural crop plus the helper and returns APR.2024 and MAR.2027 with good confidence.")
     add_bullet(doc, "Second independent reading returns the same values.")
     add_bullet(doc, "Comparison: clear agreement → skip extra review.")
     add_bullet(doc, "Calendar rules: MAR.2027 is still valid through the end of March 2027 → not expired.")
@@ -599,8 +612,9 @@ def build():
     add_heading_styled(doc, "8. Summary for decision-makers", 1)
     add_body(
         doc,
-        "MedExpiry combines specialist date-area detection, dual independent readings, "
-        "optional third-party adjudication, and strict calendar validation. Users receive "
+        "MedExpiry combines specialist date-area detection (YOLO), dual independent "
+        "readings (Qwen 3.6 27B), optional third-party adjudication (Nemotron Omni), "
+        "mild crop helpers for hard print, and strict calendar validation. Users receive "
         "a plain expired/not-expired answer plus a separate review flag, in multiple Indian "
         "languages, with optional speech. The design prioritizes safety and honesty over "
         "speed-at-all-costs guessing.",

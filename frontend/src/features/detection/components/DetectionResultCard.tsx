@@ -23,6 +23,7 @@ export interface DetectionResultCardProps {
   onListen: () => void;
   onStopSpeech: () => void;
   isSpeaking?: boolean;
+  isLoadingSpeech?: boolean;
 }
 
 export default function DetectionResultCard({
@@ -30,6 +31,7 @@ export default function DetectionResultCard({
   onListen,
   onStopSpeech,
   isSpeaking = false,
+  isLoadingSpeech = false,
 }: DetectionResultCardProps) {
   const { t } = useTranslation();
   const { expiry_status, needs_human_review } = result.assessment;
@@ -52,6 +54,7 @@ export default function DetectionResultCard({
     <section
       className="animate-slide-result space-y-6 rounded-2xl border border-teal-900/10 bg-white/70 p-6 shadow-[0_12px_40px_rgba(15,61,58,0.06)] backdrop-blur-sm sm:p-8"
       aria-live="polite"
+      translate="no"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -73,13 +76,13 @@ export default function DetectionResultCard({
         <div>
           <dt className="text-sm text-[var(--color-muted)]">{t("result.mfg")}</dt>
           <dd className="mt-1 font-display text-2xl text-[var(--color-ink)]">
-            {result.final_mfg || "—"}
+            {result.assessment.mfg_display || result.final_mfg || "—"}
           </dd>
         </div>
         <div>
           <dt className="text-sm text-[var(--color-muted)]">{t("result.exp")}</dt>
           <dd className="mt-1 font-display text-2xl text-[var(--color-ink)]">
-            {result.final_exp || "—"}
+            {result.assessment.exp_display || result.final_exp || "—"}
           </dd>
         </div>
       </dl>
@@ -103,15 +106,19 @@ export default function DetectionResultCard({
         <button
           type="button"
           onClick={onListen}
-          disabled={isSpeaking}
+          disabled={isSpeaking || isLoadingSpeech}
           className="cta-lift inline-flex items-center gap-2 rounded-lg bg-[var(--color-teal-800)] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none disabled:hover:transform-none"
           aria-pressed={isSpeaking}
         >
           <Volume2 className="size-4" aria-hidden />
-          {isSpeaking ? t("result.speaking") : t("result.listen")}
+          {isLoadingSpeech
+            ? t("speech.loading")
+            : isSpeaking
+              ? t("result.speaking")
+              : t("result.listen")}
         </button>
 
-        {isSpeaking && (
+        {(isSpeaking || isLoadingSpeech) && (
           <button
             type="button"
             onClick={onStopSpeech}

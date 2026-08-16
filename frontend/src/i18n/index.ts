@@ -15,16 +15,16 @@ import pa from "./locales/pa.json";
 export const LANGUAGE_STORAGE_KEY = "medexpiry-lang";
 
 export const SUPPORTED_LANGUAGES = [
-  { code: "en", label: "English", speechLang: "en-IN" },
-  { code: "hi", label: "हिन्दी", speechLang: "hi-IN" },
-  { code: "ta", label: "தமிழ்", speechLang: "ta-IN" },
-  { code: "te", label: "తెలుగు", speechLang: "te-IN" },
-  { code: "mr", label: "मराठी", speechLang: "mr-IN" },
-  { code: "bn", label: "বাংলা", speechLang: "bn-IN" },
-  { code: "gu", label: "ગુજરાતી", speechLang: "gu-IN" },
-  { code: "kn", label: "ಕನ್ನಡ", speechLang: "kn-IN" },
-  { code: "ml", label: "മലയാളം", speechLang: "ml-IN" },
-  { code: "pa", label: "ਪੰਜਾਬੀ", speechLang: "pa-IN" },
+  { code: "en", label: "English" },
+  { code: "hi", label: "हिन्दी" },
+  { code: "ta", label: "தமிழ்" },
+  { code: "te", label: "తెలుగు" },
+  { code: "mr", label: "मराठी" },
+  { code: "bn", label: "বাংলা" },
+  { code: "gu", label: "ગુજરાતી" },
+  { code: "kn", label: "ಕನ್ನಡ" },
+  { code: "ml", label: "മലയാളം" },
+  { code: "pa", label: "ਪੰਜਾਬੀ" },
 ] as const;
 
 export type LanguageCode = (typeof SUPPORTED_LANGUAGES)[number]["code"];
@@ -49,11 +49,6 @@ function readStoredLanguage(): LanguageCode {
   return match?.code ?? "en";
 }
 
-export function getSpeechLang(code: string): string {
-  const match = SUPPORTED_LANGUAGES.find((lang) => lang.code === code);
-  return match?.speechLang ?? "en-IN";
-}
-
 export function isSupportedLanguage(code: string): code is LanguageCode {
   return SUPPORTED_LANGUAGES.some((lang) => lang.code === code);
 }
@@ -71,6 +66,7 @@ void i18n.use(initReactI18next).init({
 
 if (typeof document !== "undefined") {
   document.documentElement.lang = initialLanguage;
+  document.documentElement.setAttribute("translate", "no");
 }
 
 i18n.on("languageChanged", (lng) => {
@@ -78,7 +74,7 @@ i18n.on("languageChanged", (lng) => {
     localStorage.setItem(LANGUAGE_STORAGE_KEY, lng);
   }
   if (typeof document !== "undefined") {
-    document.documentElement.lang = lng;
+    document.documentElement.lang = isSupportedLanguage(lng) ? lng : "en";
   }
 });
 

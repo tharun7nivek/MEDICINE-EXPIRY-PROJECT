@@ -123,6 +123,17 @@ RETAIN_DETECT_TEMPS: bool = (
     os.getenv("RETAIN_DETECT_TEMPS", "false").lower() == "true"
 )
 
+# When true (default): YOLO crop readers + reflection see only the raw RGB crop.
+# Dewarp/morph code stays in the repo but is not sent to VLMs.
+# Set RAW_CROP_PIPELINE=false to attach dewarped (first_read) and morph (reflection).
+RAW_CROP_PIPELINE: bool = os.getenv("RAW_CROP_PIPELINE", "true").lower() == "true"
+
+# ---------------------------------------------------------------------------
+# Speech — Microsoft Edge neural TTS (edge-tts); no API key
+# ---------------------------------------------------------------------------
+SPEECH_CACHE_DIR: str = str(Path(STORAGE_DIR) / "speech_cache")
+TTS_RATE_LIMIT_PER_MINUTE: int = int(os.getenv("TTS_RATE_LIMIT_PER_MINUTE", "20"))
+
 # ---------------------------------------------------------------------------
 # CORS — comma-separated origins; default "*" for local development
 # ---------------------------------------------------------------------------

@@ -104,6 +104,8 @@ async def arun_date_detection(image_path: str) -> DateDetectionState:
         "attempt": 0,
         "bbox_2d": None,
         "crop_path": "",
+        "dewarped_crop_path": "",
+        "morph_crop_path": "",
         "crop_source": "yolo",
         "first_result": {},
         "second_result": {},

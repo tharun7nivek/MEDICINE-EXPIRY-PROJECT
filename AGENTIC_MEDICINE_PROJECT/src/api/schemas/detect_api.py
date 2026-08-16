@@ -58,6 +58,7 @@ class HealthResponse(BaseModel):
     openrouter_keys: int
     groq_keys: int
     storage_dir: str
+    tts_configured: bool = False
 
 
 class ApiRootResponse(BaseModel):

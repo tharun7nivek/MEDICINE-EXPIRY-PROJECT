@@ -47,16 +47,19 @@ class DetectService:
         self.storage = storage or DetectStorageRepository()
         self.assessment = assessment or ExpiryAssessmentService()
 
-    async def detect_upload(self, file: UploadFileLike) -> DetectResponse:
+    async def detect_upload(
+        self, file: UploadFileLike, lang: str | None = "en"
+    ) -> DetectResponse:
         """Run detection on a multipart upload."""
         data = await file.read()
         filename = file.filename or "upload.jpg"
-        return await self.detect_bytes(data, filename=filename)
+        return await self.detect_bytes(data, filename=filename, lang=lang)
 
     async def detect_bytes(
         self,
         data: bytes,
         filename: str = "upload.jpg",
+        lang: str | None = "en",
     ) -> DetectResponse:
         """
         Persist *data*, run ``compiled_graph.ainvoke``, clean up temps, return DTO.
@@ -72,7 +75,10 @@ class DetectService:
             crop_path = final_state.get("crop_path") or crop_path
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             return self._to_response(
-                final_state, request_id=request_id, elapsed_ms=elapsed_ms
+                final_state,
+                request_id=request_id,
+                elapsed_ms=elapsed_ms,
+                lang=lang,
             )
         finally:
             await self.storage.acleanup_request(request_id, crop_path)
@@ -97,6 +103,7 @@ class DetectService:
         *,
         request_id: str,
         elapsed_ms: int,
+        lang: str | None = "en",
     ) -> DetectResponse:
         first = final_state.get("first_result") or {}
         second = final_state.get("second_result") or {}
@@ -114,6 +121,7 @@ class DetectService:
                 final_mfg,
                 final_exp,
                 status=status,
+                lang=lang,
             ),
             consensus_status=final_state.get("consensus_status"),
             first_result=first,

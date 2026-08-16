@@ -15,6 +15,7 @@ from src.api.schemas.expiry_assessment import (
     ExpiryAssessment,
 )
 from src.api.utils.pack_date_parser import is_expired, parse_pack_date
+from src.api.utils.date_display import format_pack_date_display, normalize_display_lang
 
 PipelineStatus = Literal["accepted", "human_review"]
 
@@ -35,10 +36,12 @@ class ExpiryAssessmentService:
         *,
         status: PipelineStatus = "accepted",
         today: date | None = None,
+        lang: str | None = "en",
     ) -> ExpiryAssessment:
         ref = today or date.today()
         mfg = parse_pack_date(final_mfg)
         exp = parse_pack_date(final_exp)
+        display_lang = normalize_display_lang(lang)
 
         if exp is None:
             expiry_status: Literal["valid", "expired", "unknown"] = "unknown"
@@ -63,6 +66,9 @@ class ExpiryAssessmentService:
             exp_iso=exp.as_date.isoformat() if exp else None,
             exp_valid_through=exp.valid_through().isoformat() if exp else None,
             exp_precision=exp.precision if exp else None,
+            mfg_display=format_pack_date_display(mfg, display_lang),
+            exp_display=format_pack_date_display(exp, display_lang),
+            display_lang=display_lang,
         )
 
     def assess_request(
@@ -76,6 +82,7 @@ class ExpiryAssessmentService:
             body.final_exp,
             status=body.status,
             today=today,
+            lang=body.lang,
         )
         return AssessResponse(
             final_mfg=body.final_mfg,

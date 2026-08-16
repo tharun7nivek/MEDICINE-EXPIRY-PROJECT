@@ -24,6 +24,8 @@ import re
 
 from src.api.schemas.date_detection_state import DateDetectionState
 from src.api.http_clients.key_pool import OMNI30B, acall_vlm_with_rotation
+from src.api.utils.image_preprocess import write_morph_crop
+from src.api.config.settings import RAW_CROP_PIPELINE
 
 # Production pin: Reflection = omni on OpenRouter.
 # MODEL_SPECS fallbacks are emergency-only inside the pool.
@@ -34,7 +36,7 @@ REFLECTION_MODELS = [OMNI30B]
 # providers that honor response_format; omni may strip it via key_pool).
 # Both readers are crop OCR — neither saw the full package for grounding.
 # ---------------------------------------------------------------------------
-SYSTEM_PROMPT = (
+SYSTEM_PROMPT_RAW = (
     "You are an adjudication API that resolves disagreements between two "
     "medicine-label date readings.\n"
     "Respond ONLY with a single valid JSON object. No markdown, no code fences, "
@@ -59,11 +61,51 @@ SYSTEM_PROMPT = (
     "- Mark unresolved when the crop is too ambiguous to choose confidently."
 )
 
-USER_PROMPT_TEMPLATE = (
+USER_PROMPT_TEMPLATE_RAW = (
     "Two independent crop readings of a medicine label's date field disagreed:\n\n"
     'Reading A (crop OCR): mfg="{mfg_a}", exp="{exp_a}"\n'
     'Reading B (crop OCR): mfg="{mfg_b}", exp="{exp_b}"\n\n'
     "Look at the attached CROP IMAGE closely at the position(s) where A and B disagree.\n"
+    "Decide resolved vs unresolved and return JSON only."
+)
+
+SYSTEM_PROMPT = (
+    "You are an adjudication API that resolves disagreements between two "
+    "medicine-label date readings.\n"
+    "Respond ONLY with a single valid JSON object. No markdown, no code fences, "
+    "no reasoning text, no explanation.\n"
+    "JSON schema (example values):\n"
+    "{\n"
+    '  "resolution": "resolved",\n'
+    '  "mfg_date_raw": "06/2023",\n'
+    '  "exp_date_raw": "05/2025",\n'
+    '  "evidence_note": "Digit 6 is clear on the crop; B misread label prefix."\n'
+    "}\n"
+    "resolution must be resolved or unresolved. Use null dates only when unresolved.\n\n"
+    "CONTEXT ABOUT THE TWO READERS:\n"
+    "- Reading A (first_read): crop OCR of the date region — saw the natural RGB crop "
+    "plus a dewarped helper; must still be checked against the natural crop you see.\n"
+    "- Reading B (second_read): crop OCR of the same date region — natural RGB crop only.\n"
+    "You are shown two images of the SAME crop:\n"
+    "  Image 1 (PRIMARY): natural RGB crop.\n"
+    "  Image 2 (HELPER): morphological binarized view (black text on white) for glare "
+    "or broken strokes. Do not invent dates from morph blobs.\n"
+    "Rules:\n"
+    "- Prefer the reading whose characters are clearly visible on Image 1.\n"
+    "- Use Image 2 only as extra reference when a disputed character is clearer there.\n"
+    "- If Image 1 and Image 2 conflict, prefer Image 1 unless the disputed character "
+    "is clearly more readable on Image 2.\n"
+    "- If one reading is a label prefix (e.g. 'MFG. D' / 'EXP. D') and the other "
+    "has a numeric/month date, prefer the date reading.\n"
+    "- Mark unresolved when the crop is too ambiguous to choose confidently."
+)
+
+USER_PROMPT_TEMPLATE = (
+    "Two independent crop readings of a medicine label's date field disagreed:\n\n"
+    'Reading A (crop OCR): mfg="{mfg_a}", exp="{exp_a}"\n'
+    'Reading B (crop OCR): mfg="{mfg_b}", exp="{exp_b}"\n\n'
+    "Image 1 is the natural RGB crop (primary). Image 2 is a high-contrast morph helper.\n"
+    "Look closely at the position(s) where A and B disagree.\n"
     "Decide resolved vs unresolved and return JSON only."
 )
 
@@ -138,40 +180,81 @@ async def reflection_node(state: DateDetectionState) -> DateDetectionState:
     """
     LangGraph node — reflection (adjudication).
 
-    Shown both candidate crop readings and the crop; required to cite visual
-    evidence at the disputed character position before adjudicating.
+    Shown both candidate crop readings plus the natural RGB crop and a morph helper.
 
     Mutates and returns state with:
       - reflection_result: raw parsed JSON from the model
+      - morph_crop_path: path to the lazy morphological crop
       - final_mfg / final_exp: set if resolution == "resolved"
         (left as None if "unresolved", causing validate to route to HUMAN_REVIEW)
     """
     a: dict = state["first_result"]
     b: dict = state["second_result"]
     crop_path: str = state["crop_path"]
-
     crop_b64 = _encode_image(crop_path)
 
-    user_content = USER_PROMPT_TEMPLATE.format(
+    user_values = dict(
         mfg_a=a.get("mfg_date_raw") or "null",
         exp_a=a.get("exp_date_raw") or "null",
         mfg_b=b.get("mfg_date_raw") or "null",
         exp_b=b.get("exp_date_raw") or "null",
     )
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": user_content},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": crop_b64, "detail": "high"},
-                },
-            ],
-        },
-    ]
+    if RAW_CROP_PIPELINE:
+        user_content = USER_PROMPT_TEMPLATE_RAW.format(**user_values)
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT_RAW},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_content},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": crop_b64, "detail": "high"},
+                    },
+                ],
+            },
+        ]
+    else:
+        morph_path = state.get("morph_crop_path") or ""
+        if not morph_path:
+            try:
+                morph_path = write_morph_crop(crop_path)
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "reflection_node: morph preprocess failed (%s); using raw crop only.",
+                    exc,
+                )
+                morph_path = crop_path
+            state["morph_crop_path"] = morph_path
+
+        morph_b64 = _encode_image(morph_path)
+        user_content = USER_PROMPT_TEMPLATE.format(**user_values)
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_content},
+                    {
+                        "type": "text",
+                        "text": "Image 1 (PRIMARY — natural RGB crop):",
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": crop_b64, "detail": "high"},
+                    },
+                    {
+                        "type": "text",
+                        "text": "Image 2 (HELPER — morphological binarized crop):",
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": morph_b64, "detail": "high"},
+                    },
+                ],
+            },
+        ]
 
     response = await acall_vlm_with_rotation(
         model=REFLECTION_MODELS,

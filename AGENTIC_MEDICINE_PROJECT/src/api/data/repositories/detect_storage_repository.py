@@ -44,7 +44,9 @@ class DetectStorageRepository:
           uploads/
             {request_id}/
               {filename}
-              {stem}_crop{ext}   # written by crop_zoom next to the upload
+              {stem}_crop{ext}            # raw RGB crop (crop_zoom)
+              {stem}_crop_dewarped{ext}   # dewarp+sharpen helper
+              {stem}_crop_morph.png       # morph helper (reflection only)
     """
 
     def __init__(

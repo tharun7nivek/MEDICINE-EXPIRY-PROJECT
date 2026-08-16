@@ -37,6 +37,9 @@ export interface ExpiryAssessment {
   exp_iso: string | null;
   exp_valid_through: string | null;
   exp_precision: DatePrecision | null;
+  mfg_display: string | null;
+  exp_display: string | null;
+  display_lang: string;
 }
 
 export interface ModelsUsed {
@@ -71,12 +74,22 @@ export interface HealthResponse {
   openrouter_keys: number;
   groq_keys: number;
   storage_dir: string;
+  tts_configured?: boolean;
+}
+
+export interface SpeechExpirySummaryRequest {
+  lang: string;
+  expiry_status: ExpiryStatus;
+  mfg_display: string | null;
+  exp_display: string | null;
+  needs_human_review: boolean;
 }
 
 export interface AssessRequest {
   final_mfg?: string | null;
   final_exp?: string | null;
   status?: DetectStatus;
+  lang?: string;
 }
 
 export interface AssessResponse {

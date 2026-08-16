@@ -62,6 +62,9 @@ def test_assessment_not_expired_for_future_month():
     assert result.is_expired is False
     assert result.exp_parsed is True
     assert result.exp_valid_through == "2027-03-31"
+    assert result.mfg_display == "April 2024"
+    assert result.exp_display == "March 2027"
+    assert result.display_lang == "en"
     # pipeline flagged review
     assert result.needs_human_review is True
 
@@ -85,3 +88,17 @@ def test_assessment_unknown_when_unparsed():
     assert result.expiry_status == "unknown"
     assert result.is_expired is None
     assert result.needs_human_review is True
+
+
+def test_assessment_tamil_display_strings():
+    svc = ExpiryAssessmentService()
+    result = svc.assess(
+        "APR.2024",
+        "15 MAR 2027",
+        status="accepted",
+        today=date(2026, 8, 3),
+        lang="ta",
+    )
+    assert result.mfg_display == "ஏப்ரல் 2024"
+    assert result.exp_display == "15 மார்ச் 2027"
+    assert result.display_lang == "ta"

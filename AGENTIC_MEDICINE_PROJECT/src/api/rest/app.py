@@ -58,6 +58,7 @@ def _init_runtime() -> dict:
         "openrouter_keys": len(OPENROUTER_KEYS),
         "groq_keys": len(GROQ_KEYS),
         "storage_dir": STORAGE_DIR,
+        "tts_configured": True,
     }
     logger.info(
         "Runtime ready: YOLO=%s openrouter_keys=%d groq_keys=%d storage=%s",
@@ -85,14 +86,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Starlette will not send ACAO for allow_origins=["*"] + credentials=True.
+_allow_all = CORS_ORIGINS == ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=not _allow_all,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 from src.api.rest.routes.detect_route import router as detect_router  # noqa: E402
+from src.api.rest.routes.speech_route import router as speech_router  # noqa: E402
 
 app.include_router(detect_router, prefix="/api/v1")
+app.include_router(speech_router, prefix="/api/v1")
